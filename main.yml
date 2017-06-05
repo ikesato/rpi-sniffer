@@ -1,0 +1,93 @@
+- hosts: hosts
+  become: yes
+  tasks:
+#    - name: setup /etc/dhcpcd.conf
+#      lineinfile:
+#        dest: /etc/dhcpcd.conf
+#        line: "denyinterfaces wlan0"
+
+    - name: copy /etc/dhcpcd.conf
+      copy:
+        src: files/dhcpcd.conf
+        dest: /etc/dhcpcd.conf
+        mode: 600
+
+    - name: copy wpa_supplicant.conf
+      copy:
+        src: files/wpa_supplicant.conf
+        dest: /etc/wpa_supplicant/wpa_supplicant.conf
+        mode: 600
+
+    - name: copy /etc/network/interfaces
+      copy:
+        src: files/interfaces
+        dest: /etc/network/interfaces
+        mode: 644
+
+    # 一旦ここで reboot
+    # TODO:wait_for で reboot の記述
+
+    - name: install packages
+      apt: name={{item}} update_cache=yes
+      with_items:
+        - tcpdump
+        - hostapd
+        - aircrack-ng
+        - isc-dhcp-server
+        - dnsutils
+        - telnet
+
+    - name: install extra packages
+      apt: name={{item}} update_cache=yes
+      with_items:
+        - emacs
+        - vim
+        - git
+        - zsh
+        - tmux
+
+    - name: copy /etc/hostapd/hostapd.conf
+      copy:
+        src: files/hostapd.conf
+        dest: /etc/hostapd/hostapd.conf
+
+    - name: setup /etc/default/hostapd
+      lineinfile:
+        dest: /etc/default/hostapd
+        line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+
+    - name: copy /etc/dhcp/dhcpd.conf
+      copy:
+        src: files/dhcpd.conf
+        dest: /etc/dhcp/dhcpd.conf
+
+    - name: setup /etc/default/isc-dhcp-server
+      lineinfile:
+        dest: /etc/default/isc-dhcp-server
+        line: 'INTERFACES="wlan0"'
+
+    - name: setup /etc/sysctl.conf
+      lineinfile:
+        dest: /etc/sysctl.conf
+        line: 'net.ipv4.ip_forward=1'
+        insertafter: 'net.ipv4.ip_forward'
+
+    - name: check /etc/iptables.ipv4.nat
+      stat: path=/etc/iptables.ipv4.nat
+      register: iptables_ipv4_nat
+
+    - name: setup nat
+      script: files/setup_nat.sh
+      when: iptables_ipv4_nat.stat.exists == false
+
+    - name: setup /lib/dhcpcd/dhcpcd-hooks/70-ipv4-nat
+      lineinfile:
+        create: yes
+        dest: /lib/dhcpcd/dhcpcd-hooks/70-ipv4-nat
+        line: 'iptables-restore < /etc/iptables.ipv4.nat'
+
+    - name: work around for starting isc-dhcp-server
+      lineinfile:
+        dest: /etc/init.d/isc-dhcp-server
+        line: "\t\tsleep 7 # Work around for starting dhcp server, because wlan0 is no active when starting this daemon"
+        insertbefore: '\sstart-stop-daemon --start'
