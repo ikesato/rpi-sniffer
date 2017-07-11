@@ -24,8 +24,14 @@
         dest: /etc/network/interfaces
         mode: 644
 
-    # 一旦ここで reboot
-    # TODO:wait_for で reboot の記述
+    - name: "reboot"
+      shell: "sleep 2 && reboot"
+      async: 1
+      poll: 0
+
+    - name: "Wait for the server to finish rebooting"
+      become: no
+      local_action: wait_for host="{{ inventory_hostname }}" search_regex=OpenSSH port=22 timeout=300 delay=30
 
     - name: install packages
       apt: name={{item}} update_cache=yes
